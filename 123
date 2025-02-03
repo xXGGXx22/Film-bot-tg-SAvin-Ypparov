@@ -1,0 +1,427 @@
+# main
+import asyncio
+import logging
+from aiogram import Bot, Dispatcher
+from config import TOKEN
+from app.handlers import router
+from app.rose import rose_router
+
+bot = Bot(token=TOKEN)
+dp = Dispatcher()
+
+dp.include_router(router)
+dp.include_router(rose_router)
+
+# logger
+logging.basicConfig(
+    level=logging.INFO,
+    format= '%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+async def main():
+    try:
+        logger.info('= - = - = - = - = - Bot has been started! = - = - = - = - = -')
+        logger.info("Starting polling...")
+        await dp.start_polling(bot)
+    except KeyboardInterrupt:
+        logger.info("Stopped by user.")
+    except Exception as e:
+        logger.error(f"Error: {e}")
+    finally:
+        await on_shutdown()
+        
+async def on_shutdown():
+    logger.info("Stopping bot...")
+    await bot.session.close()
+    logger.info("= - = - = - = - = - Bot has been stopped! = - = - = - = - = -")
+
+if __name__ == '__main__':
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Program was stoped by user.")
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+
+# python 3.13.0 | aiogram 3.17.0 | last format day 23.01.2025 - 20:46 | RoseBot - @regwid_RoseBot
+
+
+# config
+TOKEN = '7749624540:AAFYF2eqO4M6uYVTUlWH1aEe7sZUyf-r3mc'
+OWNER_ID = '1723389170'
+ACHIEVEMENTS_FILE = "achievements.json"
+DATA_FILE = "user_data.json"
+BOOSTY = 'https://boosty.to/regw1d'
+DONATE = 'https://www.donationalerts.com/r/regw1d'
+CHANNEL = 'https://t.me/+2oWmBhIhLjw5OWI6'
+RULES = 'https://telegra.ph/RoseBot-Rules-RUEN-11-20'
+
+# settings
+MIN_ROSE_CHANGE = -5  # min
+MAX_ROSE_CHANGE = 10  # max
+DELAY = 2 * 60 * 60 # delay -> 2h
+#chance change = 6,666666666666667% or 6,66% or ~7%
+
+
+
+# handlers
+from aiogram import Router
+from aiogram.filters import CommandStart, Command
+from aiogram.types import Message, CallbackQuery
+from aiogram.exceptions import TelegramBadRequest
+from app.keyboards import donate_keyboard, stats_keyboard
+from app.rose import handle_rose_command, get_rose_word_form
+from config import RULES, CHANNEL, DATA_FILE, ACHIEVEMENTS_FILE
+import json
+
+router = Router()
+PAGE_SIZE = 15
+hotwords_list = ['роза', 'цветок', 'красный']
+
+# save/load user_data
+def load_user_data():
+    try:
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+def save_user_data(data):
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+
+# save/load achie
+def load_achievements():
+    try:
+        with open(ACHIEVEMENTS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+def save_achievements(achievements):
+    with open(ACHIEVEMENTS_FILE, "w", encoding="utf-8") as f:
+        json.dump(achievements, f, ensure_ascii=False, indent=4)
+
+# commands
+@router.message(CommandStart())
+async def start(message: Message):
+    await message.reply(
+        f'Привет {message.from_user.first_name}🌹.\n'
+        'Это первый полу-законченый проект от @regwid1337, связанный с ТГ ботом и... Розами.\n'
+        'Для более подробной информации пропиши /rules или /help.'
+    )
+
+@router.message(Command("help"))
+async def help(message: Message):
+    await message.reply(
+        "Доступные команды бота:\n"
+        "🔹 /start – Проверьте, работает ли бот.\n"
+        "🔹 /help – Откройте эту страницу с подсказками.\n"
+        "🔹 /rose – Основная команда для изменения количества роз.\n"
+        "🔹 /hotwords – Горячие слова, на которые реагирует бот.\n"
+        "🔹 /donate – Поддержите автора! Немного хочется кушать 😊.\n"
+        "🔹 /stats – Узнайте статистику по количеству роз.\n"
+        "🔹 /fstats – Статистика без страниц (прожимать только в ЛС!).\n"
+        "🔹 /achie – Посмотрите свои достижения.\n"
+        "🔹 /rules – Ознакомьтесь с правилами использования.\n"
+        "🔹 /helpersdev – Список людей, помогавших в создании бота.\n"
+        "🔹 /regchan – Канал с новостями о разработке.\n"
+        "🟥 /seasons – Узнайте про сезоны. (WIP)\n"
+        "🛠 Важно! Для корректной работы с сообщениями,\n"
+        "содержащими 'горячие слова', не забудьте дать боту полные права администратора."
+    )
+
+@router.message(Command("hotwords"))
+async def hotwords(message: Message):
+    await message.reply('Хот-ворды бота: роза, цветок, красный.')
+
+@router.message(lambda message: message.text and not message.text.startswith('/') and any(word in message.text.lower() for word in hotwords_list))
+async def handle_hotwords(message: Message):
+    await handle_rose_command(message)
+
+@router.message(Command("donate"))
+async def donate(message: Message):
+    markup = donate_keyboard()
+    await message.reply("Поддержать автора можно тут:", reply_markup=markup)
+
+@router.callback_query(lambda c: c.data == "donate:stars")
+async def handle_stars_donate(callback: CallbackQuery):
+    await callback.answer("Анлак(")
+    await callback.message.reply("Пока не подключил((")
+
+@router.message(Command("stats"))
+async def handle_stats_command(message: Message):
+    await show_page_stats(message.bot, message.chat.id, message.message_id, page=0)
+
+async def show_page_stats(bot, chat_id, message_id, page: int):
+    data = load_user_data()
+    if not data:
+        await bot.send_message(chat_id=chat_id, text="Пока никто не выращивал розы.")
+        return
+
+    stats = sorted(data.items(), key=lambda x: x[1]['roses'], reverse=True)
+    total_pages = (len(stats) + PAGE_SIZE - 1) // PAGE_SIZE
+    start = page * PAGE_SIZE
+    end = start + PAGE_SIZE
+    current_page = stats[start:end]
+
+    if not current_page:
+        await bot.send_message(chat_id=chat_id, text="Нет данных для отображения.")
+        return
+
+    stats_message = "🌹 Топ пользователей:\n"
+    for i, (user_id, user_data) in enumerate(current_page, start=start + 1):
+        stats_message += f"{i}. {user_data['username']} ({user_data['nickname']}): {user_data['roses']} {get_rose_word_form(user_data['roses'])}\n"
+    markup = stats_keyboard(page, total_pages)
+    try:
+        await bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=stats_message, reply_markup=markup)
+    except TelegramBadRequest:
+        await bot.send_message(chat_id=chat_id, text=stats_message, reply_markup=markup)
+
+@router.callback_query(lambda c: c.data and c.data.startswith("stats:"))
+async def handle_stats_pagination(callback: CallbackQuery):
+    page = int(callback.data.split(":")[1])
+    await show_page_stats(callback.bot, callback.message.chat.id, callback.message.message_id, page=page)
+    await callback.answer()
+
+@router.message(Command("fstats"))
+async def show_full_statistics(message: Message):
+    if message.chat.type != "private":
+        await message.reply("Команду можно прописать только в ЛС с ботом!")
+        return
+
+    data = load_user_data()
+    if not data:
+        await message.reply("Пока никто не выращивал розы.")
+        return
+
+    stats = sorted(data.items(), key=lambda x: x[1]['roses'], reverse=True)
+    stats_message = "🌹 Полная статистика пользователей:\n"
+    for i, (user_id, user_data) in enumerate(stats, start=1):
+        stats_message += f"{i}. {user_data['username']} ({user_data['nickname']}): {user_data['roses']} {get_rose_word_form(user_data['roses'])}\n"
+
+    await message.reply(stats_message)
+
+@router.message(Command("achie"))
+async def show_achievements(message: Message):
+    user_id = str(message.from_user.id)
+    achievements = load_achievements()
+
+    if user_id not in achievements or not achievements[user_id]:
+        await message.reply("У вас пока нет достижений.")
+        return
+
+    user_achievements = achievements[user_id]
+    response = "Ваши достижения:\n\n"
+
+    usage_achievements = [
+        {"name": "Первые шаги!", "count": 5, "description": "5 использований команды /rose!"},
+        {"name": "Любитель времени!", "count": 25, "description": "25 использований команды /rose!"},
+        {"name": "В попытках постоянного...", "count": 50, "description": "50 использований команды /rose!"},
+        {"name": "Потерянный во времени...", "count": 80, "description": "80 использований команды /rose!"},
+        {"name": "Что такое время?", "count": 200, "description": "200 использований команды /rose!"}
+    ]
+
+    rose_achievements = [
+        {"name": "Первые розы!", "count": 11, "description": "Получите 11 роз!"},
+        {"name": "50 роз!", "count": 50, "description": "Соберите 50 роз!"},
+        {"name": "101 роза!", "count": 101, "description": "Соберите 101 розу!"},
+        {"name": "200 роз!", "count": 200, "description": "Соберите 200 красных цветков!"},
+        {"name": "500 роз!", "count": 500, "description": "Соберите 500 алых цветов!"}
+    ]
+
+    all_achievements = usage_achievements + rose_achievements
+
+    for achie_name in user_achievements:
+        detail = next((d for d in all_achievements if d["name"] == achie_name), None)
+        if detail:
+            response += f"🌟 *{detail['name']}*\n📖 {detail['description']}\n\n"
+        else:
+            response += f"🌟 *{achie_name}*\n"
+
+    await message.reply(response, parse_mode="Markdown")
+
+@router.message(Command("rules"))
+async def rules(message: Message):
+    await message.reply(f'Правила бота ⬇️:\n {RULES}')
+
+@router.message(Command("seasons"))
+async def seasons(message: Message):
+    await message.reply('None')
+
+@router.message(Command("helpersdev"))
+async def helpersdev(message: Message):
+    await message.reply(
+        '💵 Boosty:\n'
+        'xenonity - 43 руб\n'
+        'Aizava - 30 руб\n'
+        '💰 DonationAlerts:\n'
+        'De4thlxrd - 26 руб\n'
+        '🧑‍💻 Helpdev:\n'
+        'Eselty, MaDeInCCCP'
+    )
+
+@router.message(Command("regchan"))
+async def regchan(message: Message):
+    await message.reply(f'Ссылка на канал разработчика:\n {CHANNEL}')
+
+
+# rose
+from config import DELAY, MIN_ROSE_CHANGE, MAX_ROSE_CHANGE, DATA_FILE, ACHIEVEMENTS_FILE
+from datetime import datetime, timedelta
+from aiogram import Router
+from aiogram.filters import Command
+from aiogram.types import Message
+import random
+import json
+
+rose_router = Router()
+
+def get_current_time():
+    return datetime.now()
+
+def format_remaining_time(remaining_time):
+    hours, remainder = divmod(remaining_time.total_seconds(), 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{int(hours)} ч. {int(minutes)} мин. {int(seconds)} сек."
+
+def get_rose_word_form(number):
+    if number % 10 == 1 and number % 100 != 11:
+        return "роза"
+    elif 2 <= number % 10 <= 4 and (number % 100 < 10 or number % 100 >= 20):
+        return "розы"
+    else:
+        return "роз"
+
+def can_use_rose(last_used_time):
+    if last_used_time:
+        elapsed_time = get_current_time() - datetime.fromtimestamp(last_used_time)
+        return elapsed_time.total_seconds() >= DELAY
+    return True
+
+def load_user_data():
+    try:
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+
+def save_user_data(data):
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+
+def load_achievements():
+    try:
+        with open(ACHIEVEMENTS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+
+def save_achievements(achievements):
+    with open(ACHIEVEMENTS_FILE, "w", encoding="utf-8") as f:
+        json.dump(achievements, f, ensure_ascii=False, indent=4)
+
+def check_achievements(user_data):
+    achievements = load_achievements()
+    user_id = user_data["user_id"]
+
+    if user_id not in achievements:
+        achievements[user_id] = []
+
+    new_achievements = []
+
+    usage_achievements = [
+        {"name": "Первые шаги!", "count": 5, "description": "5 использований команды /rose!"},
+        {"name": "Любитель времени!", "count": 25, "description": "25 использований команды /rose!"},
+        {"name": "В попытках постоянного...", "count": 50, "description": "50 использований команды /rose!"},
+        {"name": "Потерянный во времени...", "count": 80, "description": "80 использований команды /rose!"},
+        {"name": "Что такое время?", "count": 200, "description": "200 использований команды /rose!"}
+    ]
+
+    rose_achievements = [
+        {"name": "Первые розы!", "count": 11, "description": "Получите 11 роз!"},
+        {"name": "50 роз!", "count": 50, "description": "Соберите 50 роз!"},
+        {"name": "101 роза!", "count": 101, "description": "Соберите 101 розу!"},
+        {"name": "200 роз!", "count": 200, "description": "Соберите 200 красных цветков!"},
+        {"name": "500 роз!", "count": 500, "description": "Соберите 500 алых цветов!"}
+    ]
+
+    for achie in usage_achievements:
+        if user_data["use_count"] >= achie["count"] and achie["name"] not in achievements[user_id]:
+            achievements[user_id].append(achie["name"])
+            new_achievements.append(achie["name"])
+
+    for achie in rose_achievements:
+        if user_data["roses"] >= achie["count"] and achie["name"] not in achievements[user_id]:
+            achievements[user_id].append(achie["name"])
+            new_achievements.append(achie["name"])
+
+    save_achievements(achievements)
+    return new_achievements
+
+@rose_router.message(Command("rose"))
+async def handle_rose_command(message: Message):
+    if message.chat.type not in ["group", "supergroup"]:
+        await message.reply("Попробуй добавить меня в группу и возможно... Я начну работать")
+        return
+
+    user_id = str(message.from_user.id)
+    username = message.from_user.username or "Unknown"
+    nickname = message.from_user.first_name or "User"
+
+    data = load_user_data()
+    user_data = data.get(user_id, {
+        "user_id": user_id,
+        "nickname": nickname,
+        "username": username,
+        "roses": 0,
+        "last_used_time": 0,
+        "use_count": 0,
+    })
+
+    last_used_time = user_data.get("last_used_time", 0)
+
+    if not can_use_rose(last_used_time):
+        remaining_time = timedelta(seconds=DELAY) - (get_current_time() - datetime.fromtimestamp(last_used_time))
+        await message.reply(
+            f"Ты уже растил(а) розы.\n Попробуй через ~\n {format_remaining_time(remaining_time)}\n"
+            f"У вас {user_data['roses']} {get_rose_word_form(user_data['roses'])}."
+        )
+        return
+
+    new_roses = random.randint(MIN_ROSE_CHANGE, MAX_ROSE_CHANGE)
+    user_data["roses"] += new_roses
+    user_data["last_used_time"] = get_current_time().timestamp()
+    user_data["use_count"] += 1
+    data[user_id] = user_data
+    save_user_data(data)
+
+    await message.reply(
+        f"Вы получили {new_roses} {get_rose_word_form(new_roses)}!\n"
+        f"Теперь у вас {user_data['roses']} {get_rose_word_form(user_data['roses'])}."
+    )
+
+    new_achievements = check_achievements(user_data)
+    for achie in new_achievements:
+        await message.reply(f"Поздравляем! Вы получили достижение:\n {achie}")
+
+
+# keyboards
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from config import BOOSTY, DONATE
+
+def donate_keyboard():
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Бустик!", url=BOOSTY)],
+        [InlineKeyboardButton(text="Донат Алертс!", url=DONATE)],
+        [InlineKeyboardButton(text="Telegram Stars", callback_data="donate:stars")]
+    ])
+    return markup
+
+def stats_keyboard(page: int, total_pages: int):
+    buttons = []
+    if page > 0:
+        buttons.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"stats:{page - 1}"))
+    if page < total_pages - 1:
+        buttons.append(InlineKeyboardButton(text="➡️ Вперед", callback_data=f"stats:{page + 1}"))
+    return InlineKeyboardMarkup(inline_keyboard=[buttons] if buttons else [])
+
